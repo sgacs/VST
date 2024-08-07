@@ -1,10 +1,10 @@
 (* refinedC/typing/automation.v *)
 From iris.proofmode Require Import coq_tactics reduction.
 From lithium Require Import hooks normalize.
-From VST.lithium Require Export all.
 From VST.typing Require Export type.
 From VST.typing.automation Require Export proof_state (* solvers simplification  loc_eq. *).
-From VST.typing Require Import programs (* function singleton own struct bytes int *).
+From VST.typing Require Import programs bytes (* function singleton own struct bytes int *).
+From VST.typing Require Import type_options.
 Set Default Proof Using "Type".
 
 (** * Defining extensions *)
