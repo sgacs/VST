@@ -1,9 +1,6 @@
 From VST.typing Require Export type.
 From VST.typing Require Import programs.
 From VST.typing Require Import type_options.
-From VST.lithium Require Export proof_state.
-From lithium Require Import hooks.
-From VST.floyd Require Import globals_lemmas.
 
 Section value.
   Context `{!typeG Σ} {cs : compspecs}.
@@ -128,87 +125,33 @@ Notation "value< ot , v >" := (value ot v) (only printing, format "'value<' ot '
 Section at_value.
   Context `{!typeG Σ} {cs : compspecs}.
 
+  (* up *)
   Lemma field_compatible_tptr : forall p a b, field_compatible (Tpointer a b) [] p ↔ field_compatible (tptr tvoid) [] p.
-Proof.
+  Proof.
     intros.
     split; intros (? & ? & ? & Ha & ?); split3; auto; split3; auto;
       destruct p; try done; simpl in *;
       inv Ha; econstructor; eauto.
   Qed.
 
-Lemma access_mode_tptr : forall t1 t2, access_mode (tptr t1) = access_mode (tptr t2).
-Proof.
-  intros t1 t2.
-  unfold access_mode.
-  simpl.
-  reflexivity.
-Qed.
-
-Lemma type_is_volatile_tptr : forall t1 t2, type_is_volatile (tptr t1) = type_is_volatile (tptr t2).
-Proof.
-  intros t1 t2.
-  unfold type_is_volatile.
-  simpl.
-  reflexivity.
-Qed.
-
-Lemma eqb_type_tptr_tvoid : forall t1 t2, eqb_type (tptr t1) Tvoid = eqb_type (tptr t2) Tvoid.
-Proof.
-  intros t1 t2.
-  unfold eqb_type.
-  simpl.
-  reflexivity.
-Qed.
-
-Lemma mapsto_tptr: forall l sh t1 t2 v, mapsto l sh (tptr t1) v = mapsto l sh (tptr t2) v.
-Proof.
-  intros l sh t1 t2 v.
-  unfold mapsto, mapsto_memory_block.mapsto.
-  rewrite (access_mode_tptr t1 t2).
-  rewrite (type_is_volatile_tptr t1 t2).
-  assert (Htc_val: tc_val (tptr t1) = tc_val (tptr t2)).
-  {
-    extensionality x.
-    unfold tc_val. simpl.
-    assert (H1: forall t, eqb_type t Tvoid && false = false).
-    { intros t. destruct (eqb_type t Tvoid); simpl; reflexivity. }
-    rewrite !H1.
-    reflexivity.
-  }
-  rewrite Htc_val.
-  assert (Htc_val': tc_val' (tptr t1) = tc_val' (tptr t2)).
-  {
-    extensionality x.
-    unfold tc_val'. simpl.
-    assert (H1: forall t, eqb_type t Tvoid && false = false).
-    { intros t. destruct (eqb_type t Tvoid); simpl; reflexivity. }
-    rewrite !H1.
-    reflexivity.
-  }
-  rewrite Htc_val'.
-  reflexivity.
-Qed.
-
-(* Lemma mapsto_tptr: forall l sh t1 t2 v, mapsto l sh (tptr t1) v = mapsto l sh (tptr t2) v.
+  Lemma mapsto_tptr:
+    forall sh t1 t2, mapsto sh (tptr t1) = mapsto sh (tptr t2).
   Proof.
-      intros l sh t1 t2 v.
-  unfold mapsto.
-  simpl in *; f_equal; f_equal.
+    intros.
+    unfold mapsto.
     extensionality v1 v2.
     unfold tc_val', tc_val. simpl.
     rewrite !andb_false_r //.
-  Qed. *)
+  Qed.
 
-(* The type of the pointer really doesn't matter; 
-maybe this means we're using the wrong level of type here. *)
-Lemma value_tptr l t1 t2 v' : l ◁ₗ value (tptr t1) v' ⊣⊢ l ◁ₗ value (tptr t2) v'.
-Proof.
-  rewrite /ty_own /=.
-  rewrite /tc_val' /tc_val /=.
-  rewrite !field_compatible_tptr !andb_false_r.
-  f_equiv. f_equiv. f_equiv. admit.
-(*   apply mapsto_tptr. *)
-Admitted.
+  (* The type of the pointer really doesn't matter; maybe this means we're using the wrong level of type here. *)
+  Lemma value_tptr l t1 t2 v' : l ◁ₗ value (tptr t1) v' ⊣⊢ l ◁ₗ value (tptr t2) v'.
+  Proof.
+    rewrite /ty_own /=.
+    rewrite /tc_val' /tc_val /=.
+    rewrite !field_compatible_tptr !andb_false_r.
+    rewrite /heap_mapsto_own_state; erewrite mapsto_tptr; done.
+  Qed.
 
   Lemma value_tptr_val v t1 t2 v' : v ◁ᵥ value (tptr t1) v' = v ◁ᵥ value (tptr t2) v'.
   Proof.
