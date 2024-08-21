@@ -60,13 +60,15 @@ Section function.
 
   Context (Espec : ext_spec OK_ty) (Delta : tycontext) (ge : genv).
 
+  Definition Qinit (temps : list (ident * Ctypes.type)) fp lsa lsv := ([∗list] l;t∈lsa;fp.(fp_atys), l ◁ₗ t) ∗
+                       ([∗list] l;p∈lsv;temps, l ◁ₗ uninit (p.2)) ∗ fp.(fp_Pa).
+  (* compare temps to stackframe_of f *)
+
   (* using Delta here is suspect because it contains funspecs, but maybe we can just ignore them? *)
   Definition typed_function (fn : function) (fp : @dtfr Σ A → fn_params) : iProp Σ :=
     (∀ x, <affine> ⌜Forall2 (λ (ty : type) '(_, p), ty.(ty_has_op_type) p MCNone) (fp x).(fp_atys) (Clight.fn_params fn)⌝ ∗
-      □ ∀ (lsa : vec address (length (fp x).(fp_atys))) (lsv : vec address (length fn.(fn_temps))),
-          let Qinit := ([∗list] l;t∈lsa;(fp x).(fp_atys), l ◁ₗ t) ∗
-                       ([∗list] l;p∈lsv;fn.(fn_temps), l ◁ₗ uninit (p.2)) ∗ (fp x).(fp_Pa) in
-          Qinit -∗ ∃ le, ⌜bind_parameter_temps (Clight.fn_params fn) (map addr_to_val (lsa ++ lsv)) (create_undef_temps fn.(fn_temps)) = Some le⌝ ∧
+      □ ∀ (lsa : vec address (length (fp x).(fp_atys))) (lsv : vec address (length fn.(fn_vars))),
+          Qinit fn.(fn_vars) (fp x) lsa lsv -∗ ∃ le, ⌜bind_parameter_temps (Clight.fn_params fn) (map addr_to_val (lsa ++ lsv)) (create_undef_temps fn.(fn_vars)) = Some le⌝ ∧
           typed_stmt Espec Delta (fn.(fn_body)) (fn_ret_prop (fp x).(fp_fr)) (construct_rho (filter_genv ge) empty_env le)
     )%I.
 
@@ -157,15 +159,21 @@ Section function.
     erewrite singleton.mapsto_tptr. iFrame. iModIntro. rewrite singleton.field_compatible_tptr. do 2 iSplit => //. by iIntros "_".
   Qed.
 
-  (*
-  Lemma type_call_fnptr l v vl tys fp T:
-    (([∗ list] v;ty∈vl; tys, v ◁ᵥ ty) -∗ ∃ x,
-      ([∗ list] v;ty∈vl; (fp x).(fp_atys), v ◁ᵥ ty) ∗
-      (fp x).(fp_Pa) ∗ ∀ v x',
-      ((fp x).(fp_fr) x').(fr_R) -∗
-      T v ((fp x).(fp_fr) x').(fr_rty))
-    ⊢ typed_call v (v ◁ᵥ l @ function_ptr fp) vl tys T.
+  Lemma type_call_fnptr l e el tys fp T:
+    match typeof e with Tfunction tl _ _ =>
+    (typed_exprs el tl (λ vl tl, ⌜tl = tys⌝ ∧ ∃ x,
+      ([∗ list] v;ty∈vl; (fp x).(fp_atys), ⎡v ◁ᵥ ty⎤) ∗
+      ⎡(fp x).(fp_Pa)⎤ ∗ ∀ v x',
+      ⎡((fp x).(fp_fr) x').(fr_R)⎤ -∗
+      T v ((fp x).(fp_fr) x').(fr_rty)))
+    | _ => False end
+    ⊢ typed_call Espec Delta e (typed_val_expr e (λ v _, ⎡v ◁ᵥ l @ function_ptr fp⎤)) el tys T.
   Proof.
+    rewrite /typed_exprs /typed_call.
+    destruct (typeof e) eqn: Hargty; try by iIntros "[]".
+    iIntros "HT He Hargs".
+(*    
+
     iIntros "HT (%fn&->&He&Hfn) Htys" (Φ) "HΦ".
     iDestruct ("HT" with "Htys") as "(%x&Hvl&HPa&Hr)".
     iDestruct ("Hfn" $! x) as "[>%Hl #Hfn]".
@@ -213,11 +221,10 @@ Section function.
       iDestruct ("HPr" with "Hv") as (?) "[Hty [HR _]]".
       iApply ("HΦ" with "Hty").
       by iApply ("Hr" with "HR").
-  Qed.
+  Qed.*) Admitted.
   Definition type_call_fnptr_inst := [instance type_call_fnptr].
-  Global Existing Instance type_call_fnptr_inst.
-*)
-  
+(*  Global Existing Instance type_call_fnptr_inst. *)
+
   Lemma subsume_fnptr_val_ex B v l1 l2 (fnty1 : dtfr A → fn_params) fnty2 `{!∀ x, ContainsEx (fnty2 x)} T:
     (∃ x, <affine> ⌜l1 = l2 x⌝ ∗ <affine> ⌜fnty1 = fnty2 x⌝ ∗ T x)
     ⊢ subsume (v ◁ᵥ l1 @ function_ptr fnty1) (λ x : B, v ◁ᵥ (l2 x) @ function_ptr (fnty2 x)) T.
@@ -457,12 +464,12 @@ Global Typeclasses Opaque inline_function_ptr_type inline_function_ptr.
 
 (*** Tests *)
 Section test.
-  Context  `{!typeG Σ}.
+  Context  `{!typeG Σ} {cs : compspecs} `{!externalGS OK_ty Σ}.
 
-(*  Local Definition test_fn := fn(∀ () : (); (uninit size_t); True) → ∃ () : (), void; True.
+  Local Definition test_fn := fn(∀ () : (); (uninit size_t); True) → ∃ () : (), void; True.
   Local Definition test_fn2 := fn(∀ () : (); True) → ∃ () : (), void; True.
   Local Definition test_fn3 := fn(∀ (n1, n2, n3, n4, n5, n6, n7) : Z * Z * Z * Z * Z * Z * Z; uninit size_t, uninit size_t, uninit size_t, uninit size_t, uninit size_t, uninit size_t, uninit size_t, uninit size_t; True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True ∗ True) → ∃ (n1, n2, n3, n4, n5, n6, n7) : Z * Z * Z * Z * Z * Z * Z, uninit size_t; True%I.
 
-  Goal ∀ (l : loc) fn, l ◁ᵥ l @ function_ptr test_fn2 -∗ typed_function fn test_fn.
-  Abort. *)
+  Goal ∀ Espec Delta ge (l : address) fn, l ◁ᵥ l @ function_ptr(A := ConstType _) Espec Delta ge test_fn2 -∗ typed_function(A := ConstType _) Espec Delta ge fn test_fn.
+  Abort.
 End test.
